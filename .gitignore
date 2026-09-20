@@ -1,0 +1,16 @@
+session/
+work/
+원고/
+임시저장/
+__pycache__/
+*.pyc
+.env
+.env*
+**/naver_state*.json
+**/naver_meta.json
+cookies*.json
+.DS_Store
+gen_*/
+# 개인이 채우는/생성되는 파일은 배포 저장소에 올리지 않는다
+내이야기.md
+블로그분석.md
