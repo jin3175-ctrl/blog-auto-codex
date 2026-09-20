@@ -7,11 +7,8 @@ import os
 import pathlib
 import urllib.request
 
-# 홈판자료(비보호·launchd 접근 가능) 우선, 없으면 데스크탑 폴백
-_ENV = next((os.path.expanduser(p) for p in
-             ("~/홈판자료/.env", "~/EdiCEO/한성협/유튜브/프로젝트/07-geumsajang-template/.env")
-             if os.path.exists(os.path.expanduser(p))),
-            os.path.expanduser("~/홈판자료/.env"))
+# 키는 내정보.txt(myinfo)에서 읽는다. .env 는 이 패키지 폴더에 있으면만 쓴다(선택).
+_ENV = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 
 def _env_key(name: str) -> str | None:
