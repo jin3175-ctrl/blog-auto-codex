@@ -34,6 +34,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -44,7 +45,38 @@ sys.path.insert(0, BASE)
 
 import config  # noqa: E402
 
-CODEX_BIN = "/Applications/ChatGPT.app/Contents/Resources/codex"
+def _find_codex() -> str:
+    """코덱스(ChatGPT) 실행 파일을 찾는다 — 맥이면 앱 안, **윈도우면 PATH/npm/앱**에서.
+    🔴맥 경로로만 박아두면 윈도우 수강생이 «맥용»이라며 못 쓴다(유료 ChatGPT가 있어도).
+       그래서 플랫폼을 여기서 가린다. 못 찾으면 ""를 돌려 조용히 ①로 넘어간다."""
+    # 1) 직접 지정 — 내정보.txt(config.CODEX_BIN) 또는 CODEX_BIN 환경변수
+    for env in (os.environ.get("CODEX_BIN"), getattr(config, "CODEX_BIN", "")):
+        if env and os.path.exists(env):
+            return env
+    # 2) PATH 에 깔린 codex — `npm i -g @openai/codex` 하면 여기 잡힌다(윈도우는 codex.cmd)
+    found = shutil.which("codex")
+    if found:
+        return found
+    # 3) 플랫폼별 앱 번들/설치 위치 후보
+    if sys.platform == "darwin":
+        cands = ["/Applications/ChatGPT.app/Contents/Resources/codex"]
+    elif os.name == "nt":
+        la, ad = os.environ.get("LOCALAPPDATA", ""), os.environ.get("APPDATA", "")
+        cands = [
+            os.path.join(la, "Programs", "ChatGPT", "resources", "codex.exe"),
+            os.path.join(la, "Programs", "ChatGPT", "codex.exe"),
+            os.path.join(ad, "npm", "codex.cmd"),
+            os.path.join(ad, "npm", "codex.exe"),
+        ]
+    else:
+        cands = []
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return ""
+
+
+CODEX_BIN = _find_codex()
 MODEL = "gpt-6-astra"
 EFFORT = "medium"
 PROMPT_FILE = os.path.join(BASE, "docs", "새벽흐름_프롬프트", "코덱스_피드백.md")
@@ -58,9 +90,13 @@ _LOGIN_RE = re.compile(r"not logged in|login|sign in|unauthorized|subscription|f
 #: 코덱스(유료 ChatGPT)가 없을 때 수강생에게 보여줄 안내.
 NO_CODEX_MSG = (
     "\n────────────────────────────────────────\n"
-    "ℹ️  코덱스(② 피드백)는 **유료 ChatGPT**가 있어야 돕습니다.\n"
+    "ℹ️  코덱스(② 피드백)는 **유료 ChatGPT + codex 실행 파일**이 있어야 돕습니다.\n"
     "    · 없어도 괜찮습니다 — 초안 그대로 사진 넣어 임시저장까지 진행됩니다.\n"
-    "    · 피드백까지 자동으로 받고 싶으면 무료 패키지 ①(blog-auto-starter)를 쓰세요.\n"
+    "    · 🪟 윈도우에서 쓰려면(유료 ChatGPT가 있는 경우):\n"
+    "        1) 터미널에 `npm i -g @openai/codex`  (Node가 없으면 먼저 설치)\n"
+    "        2) `codex login` → 유료 ChatGPT 계정으로 **본인이 직접** 로그인\n"
+    "        3) 새 터미널에서 다시 `python run_ai_daily.py --ai 1`\n"
+    "    · 설치가 번거로우면 무료 패키지 ①(blog-auto-starter)를 쓰세요 — 결과는 같습니다.\n"
     "────────────────────────────────────────")
 
 
@@ -101,9 +137,17 @@ def feedback_ok(path: str) -> bool:
     return len(fb["추천제목"]) >= 3 and bool(has_fix)
 
 
+def _codex_argv(args: list[str]) -> list[str]:
+    """실행 인자를 만든다. 🔴윈도우의 `codex.cmd`/`.bat`은 CreateProcess가 직접 못 여니
+       `cmd /c`로 감싼다(안 그러면 «올바른 응용 프로그램이 아닙니다»가 뜬다)."""
+    if os.name == "nt" and CODEX_BIN.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", CODEX_BIN, *args]
+    return [CODEX_BIN, *args]
+
+
 def _codex(prompt: str, cwd: str, last_msg: str, timeout: int, log=_log) -> tuple[int, str]:
-    cmd = [CODEX_BIN, "exec", "-m", MODEL, "-c", f'model_reasoning_effort="{EFFORT}"',
-           "-s", "workspace-write", "--skip-git-repo-check", "-C", cwd, "-o", last_msg, "-"]
+    cmd = _codex_argv(["exec", "-m", MODEL, "-c", f'model_reasoning_effort="{EFFORT}"',
+           "-s", "workspace-write", "--skip-git-repo-check", "-C", cwd, "-o", last_msg, "-"])
     try:
         r = subprocess.run(cmd, input=prompt, text=True, capture_output=True, timeout=timeout)
         out = (r.stdout or "") + "\n" + (r.stderr or "")
