@@ -30,7 +30,7 @@
 
 ## 이번 흐름 (①~⑤ · 이 순서로 안내한다)
 
-**①  이 파일(CLAUDE.md)을 읽는다.** (지금)
+**①  이 파일(AGENTS.md)을 읽는다.** (지금)
 
 **②  내 블로그 분석** — 주인이 "내 블로그는 blog.naver.com/○○○야, 분석해줘"라고 하면:
   → 터미널에서 `python blog_analyze.py ○○○` 실행.
@@ -98,9 +98,7 @@ python run_ai_daily.py --ai 1 --gen-only   # 생성만 (원고 품질 확인)
 
 **코덱스가 없을 때**: `python run_ai_daily.py --ai 1` 이 «코덱스 없음 → 초안 그대로 임시저장» 으로 진행하고
   화면에 안내가 뜬다. 주인에게 그대로 전하고, 피드백까지 원하면 **무료 패키지 ①(blog-auto-starter)**를 권한다.
-  (코덱스는 **유료 ChatGPT + codex 실행 파일**이 필요하다. 맥은 `/Applications/ChatGPT.app` 안의 것을 자동으로 쓰고,
-   🪟**윈도우는** `npm i -g @openai/codex` 로 설치한 뒤 `codex login`(유료 계정으로 **본인이 직접**) 하면
-   codex_feedback.py 가 `where codex` 로 찾아 쓴다. 못 찾으면 조용히 ①로 넘어간다 — 멈추지 않는다.)
+  (코덱스는 `/Applications/ChatGPT.app` 안의 실행 파일을 쓴다 — **유료 ChatGPT** 구독이 있어야 한다.)
 
 ## 시작할 때 (순서 고정)
 
