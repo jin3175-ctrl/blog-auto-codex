@@ -148,7 +148,7 @@ ASIDE_PROMPT = """너는 내 네이버 블로그 글쓰기 도우미야. 발행 
 ② 새 탭에서 https://blog.naver.com/{blog_id}?Redirect=Write& 를 열어. (로그인 화면이 나오면 멈추고 나에게 로그인하라고 말해)
 ③ 제목 칸에 제목을 넣고, 본문은 「오늘 글」 탭의 문단 순서 그대로 넣어.
    - 소제목(■ 표시)은 굵게 한 줄로.
-   - [사진N] 이라고 적힌 자리는 글자 그대로 둬. 사진은 내가 넣을게.
+   - [사진N] 이라고 적힌 빨간 줄은 글자 그대로 한 줄로 넣어. 사진은 그 자리에 내가 넣을게.
    - 맨 끝 # 태그 줄은 본문에 넣지 말고, 태그 입력 칸이 보이면 거기에 넣어.
 ④ 다 넣었으면 오른쪽 위 「저장」(임시저장)만 눌러. 「발행」은 누르지 마.
 ⑤ 끝나면 「임시저장 완료」와 글 제목만 알려줘.
@@ -159,6 +159,8 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
     os.makedirs(ASIDE_DIR, exist_ok=True)
     parts = []
     n_photo = 0
+    photo_dir = os.path.join(ASIDE_DIR, f"{post_no}_사진")
+    shutil.rmtree(photo_dir, ignore_errors=True)
     for b in blocks:
         t = b.get("type")
         txt = b.get("text", "") or ""
@@ -174,8 +176,13 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
             n_photo += 1
             img = ""
             if b.get("path") and os.path.exists(b["path"]):
-                img = f'<img src="file:///{html.escape(os.path.abspath(b["path"]).replace(os.sep, "/").lstrip("/"))}">'
-            parts.append(f'<p class="photo">[사진{n_photo}] 내가 넣기 {html.escape(b.get("label") or "")}</p>{img}')
+                # 🔴2026-10-18 붙여넣기로는 사진이 안 따라간다(에고라이트 실측) → 사진을 번호 붙여 폴더에 모아 둔다.
+                #   네이버 글쓰기의 빨간 [사진N] 자리에 그 번호 사진을 끌어다 놓으면 된다.
+                os.makedirs(photo_dir, exist_ok=True)
+                dst = os.path.join(photo_dir, f"사진{n_photo}{os.path.splitext(b['path'])[1] or '.jpg'}")
+                shutil.copyfile(b["path"], dst)
+                img = f'<img src="{html.escape(os.path.basename(photo_dir))}/{html.escape(os.path.basename(dst))}">'
+            parts.append(f'<p class="photo">[사진{n_photo}] {html.escape(b.get("label") or "")}</p>{img}')
         elif t == "oglink":
             parts.append(f'<p>{html.escape(b.get("url") or txt)}</p>')
         else:
@@ -192,8 +199,15 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
     prompt_path = os.path.join(ASIDE_DIR, "어사이드에_붙여넣을_프롬프트.txt")
     with open(prompt_path, "w", encoding="utf-8") as f:
         f.write(ASIDE_PROMPT.format(blog_id=_blog_id() or "내아이디"))
+        if n_photo:
+            # 어사이드가 내 컴퓨터 파일을 올릴 수 있으면 사진까지 넣고, 못 하면 사람이 끌어다 놓는다(10/18 미확인).
+            f.write(f"\n⑥ (할 수 있으면) 저장하기 전에, 빨간 [사진N] 줄마다 그 줄을 지우고 에디터 위쪽 「사진」 버튼으로\n"
+                    f"   내 컴퓨터의 이 폴더에서 같은 번호 사진을 넣어: {os.path.abspath(photo_dir)}\n"
+                    f"   (사진1 → [사진1] 자리, 사진2 → [사진2] 자리 …) 파일을 고를 수 없으면 이 단계는 건너뛰고 나에게 말해.\n")
     log(f"어사이드용 글 페이지를 만들었습니다: {path}")
     log("→ 이 파일을 어사이드 창으로 끌어다 놓고, 「어사이드에_붙여넣을_프롬프트.txt」를 Ask 칸에 붙여넣으세요.")
+    if n_photo:
+        log(f"→ 사진은 「{os.path.basename(photo_dir)}」 폴더에 번호대로 있습니다. 임시저장된 글의 [사진N] 자리에 끌어다 놓으세요.")
     return {"ok": True, "message": f"어사이드용 페이지 준비 완료 — {os.path.basename(path)} (임시저장은 어사이드가 합니다)",
             "notes": ["어사이드에서 임시저장"], "aside_page": path}
 

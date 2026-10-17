@@ -22,8 +22,39 @@ def _load_key(name: str = "UNSPLASH_ACCESS_KEY") -> str | None:
     return None
 
 
+#: 🔴2026-10-18 픽사베이 키도 받는다 — Pexels는 새 키 발급을 멈췄고, Unsplash는 앱 등록이 번거롭다.
+#  픽사베이 키 모양: 숫자-영문숫자(예 12345678-abc123…). 이 모양이면 픽사베이로 찾는다.
+_PIXABAY_KEY = re.compile(r"^\d{5,}-[0-9a-zA-Z]{20,}$")
+
+
+def _fetch_pixabay(query: str, out_path: str, key: str) -> bool:
+    """픽사베이 검색 → 상위 10장 중 하나를 골라 저장(매번 같은 사진이 안 되게)."""
+    import random
+    try:
+        url = "https://pixabay.com/api/?" + urllib.parse.urlencode({
+            "key": key, "q": query[:100], "image_type": "photo", "orientation": "horizontal",
+            "safesearch": "true", "per_page": 10, "lang": "ko" if re.search(r"[가-힣]", query) else "en",
+        })
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            hits = json.loads(resp.read().decode("utf-8")).get("hits") or []
+        if not hits:
+            return False
+        h = random.choice(hits[:10])
+        img_url = h.get("largeImageURL") or h.get("webformatURL")
+        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as ir:
+            content = ir.read()
+        with open(out_path, "wb") as f:
+            f.write(content)
+        return os.path.getsize(out_path) > 1000
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _fetch_first(query: str, out_path: str, key: str) -> bool:
-    """query로 Unsplash 검색 → 첫 결과 이미지를 out_path로 저장(단일 시도)."""
+    """query로 Unsplash 검색 → 첫 결과 이미지를 out_path로 저장(단일 시도). 픽사베이 키면 픽사베이."""
+    if _PIXABAY_KEY.match((key or "").strip()):
+        return _fetch_pixabay(query, out_path, key.strip())
     try:
         url = "https://api.unsplash.com/search/photos?" + urllib.parse.urlencode({
             "query": query, "per_page": 3, "orientation": "landscape", "content_filter": "high",
