@@ -21,6 +21,18 @@ import time
 
 
 def main() -> int:
+    # 🔴2026-10-17: 맥은 에고라이트 · 윈도우는 어사이드에서 **주인이 직접** 네이버에 로그인한다.
+    import browser_upload
+    m = browser_upload.mode()
+    if m == "ego":
+        ok, why = browser_upload.ego_session(print)
+        print("✅ 에고라이트 네이버 로그인 확인" if ok else "❌ " + why)
+        if not ok:
+            print("   에고라이트를 열고 네이버에 직접 로그인한 뒤 다시 확인하세요(로그인 상태 유지 켜기).")
+        return 0 if ok else 1
+    if m == "aside":
+        print("어사이드를 열고 네이버에 직접 로그인해 두세요. 임시저장은 어사이드가 그 창에서 합니다.")
+        return 0
     import config
     import naver
     from run_ai_daily import _alert, _log

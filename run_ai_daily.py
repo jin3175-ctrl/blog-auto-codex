@@ -269,9 +269,11 @@ def main(ai_count: int = 1, gen_only: bool = False, dry: bool = False) -> int:
     # ── ④⑤ 사진(무료 스톡 우선) → 네이버 임시저장 ──
     import naver
     import pipeline
-    if not naver.session_alive(_log):
+    import browser_upload
+    _sok, _why = browser_upload.session_ok(_log)
+    if not _sok:
         _log("[중단] 네이버 로그인이 없습니다 — 원고 파일은 만들어 두었습니다.")
-        _log("      네이버에 로그인(python3 check_session.py --login)한 뒤 다시 실행하면 임시저장됩니다.")
+        _log("      " + (_why or "네이버에 로그인한 뒤 다시 실행하면 임시저장됩니다."))
         _alert("네이버 로그인 필요", "글은 만들어 뒀습니다. 로그인 후 다시 실행하면 임시저장됩니다.")
         return 1
 

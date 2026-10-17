@@ -1456,9 +1456,17 @@ def process_post(post_no: str, log: Logger, publish: bool = False, folder: str |
     # ★연예 글만 가운데정렬(2026-08-31 에디님 지시). 홈판 연예 위너의 짧은 문단 글이
     #   예외 없이 가운데정렬이었다 — 14자/96% 글은 211문단이 전부 가운데였다.
     _align = "center" if cat == "celeb" else ""
-    result = naver.save_draft(title, blocks, png_map.get("썸네일"), log, publish=publish,
-                              category=category, reserve_at=reserve_at, align=_align,
-                              ai_mark=(cat != "celeb" or is_ai))   # 연예 사진은 방송 캡처 → AI 표기 X
+    import browser_upload
+    if browser_upload.mode() != "chrome" and not publish:
+        # 🔴2026-10-17: 맥은 에고라이트 · 윈도우는 어사이드(크롬 대신). 임시저장까지만.
+        result = browser_upload.save_draft(title, blocks, png_map.get("썸네일"), log,
+                                           category=category, align=_align,
+                                           ai_mark=(cat != "celeb" or is_ai),
+                                           post_no=post_no, folder=folder)
+    else:
+        result = naver.save_draft(title, blocks, png_map.get("썸네일"), log, publish=publish,
+                                  category=category, reserve_at=reserve_at, align=_align,
+                                  ai_mark=(cat != "celeb" or is_ai))   # 연예 사진은 방송 캡처 → AI 표기 X
 
     result.setdefault("notes", [])
     result["title"] = title
