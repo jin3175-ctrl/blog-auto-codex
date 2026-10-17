@@ -755,94 +755,103 @@ def _attach_stock_images(blocks: list[dict], workdir: str, log: Logger,
     log(f"본문 이미지 {len(descs)}개 검색어 번역 중(claude -p)…")
     queries = image_finder.translate_queries(descs)
     attached = 0
-    # ★웹 구독 이미지는 **한 브라우저 세션에서 일괄 생성**(2026-08-04).
-    #   장당 브라우저를 새로 띄우던 방식은 5분27초/장이라 6장에 33분이 걸렸다.
+    # 🔴2026-10-18 사진 순서(에디님): ① 픽사베이·언스플래시 무료 사진 → ② 제미나이(에고라이트) →
+    #   ③ 챗GPT(에고라이트) → ④ 그래도 없으면 빨간 [사진N] 자리로 남김(주인이 직접 넣기).
+    #   반복 사진(같은 글 안 · 최근 글)이 나오거나 못 찾으면 다음 순서로 넘어간다. 전부 무료.
+    #   ②③은 맥(에고라이트)만. 윈도우는 ①까지 하고, 못 찾은 자리는 어사이드용 그림 프롬프트로 넘긴다.
     out_paths = [os.path.join(workdir, f"body_{n+1:02d}.jpg") for n in range(len(photo_idxs))]
-    web_ok = [False] * len(photo_idxs)
-    try:
-        import web_image
-        # ★로그아웃된 프로필로 시도하면 장당 2.5분씩 헛되이 태운다(2026-08-04 실측: 6장 15분).
-        #   먼저 로그인 여부를 한 번만 확인하고, 아니면 즉시 API/스톡으로 넘어간다.
-        #   EDI_NO_WEBIMG=1 이면 아예 건너뛴다(급할 때).
-        # 🔴배포판 기본값 EDI_NO_WEBIMG=1 → 아래를 건너뛰고 무료 스톡(Unsplash)으로 채운다.
-        #   그록(유료)·ChatGPT 웹 이미지는 뺐다. 제미나이 **웹** 이미지는 로그인한 사람만 선택적으로 쓴다.
-        if os.environ.get("EDI_NO_WEBIMG"):
-            log("웹 구독 이미지 생략(EDI_NO_WEBIMG) → 무료 스톡/Gemini API 사용")
-        else:
-            # 제미나이 웹에 로그인된 경우에만 웹 이미지를 만든다(아니면 즉시 스톡으로).
-            if web_image.session_alive():
-                log(f"본문 이미지 {len(descs)}개 제미나이 웹 생성 중…")
-                for k, ok in enumerate(web_image.make_many(descs, out_paths, log=log)):
-                    web_ok[k] = ok
-            else:
-                log("제미나이 웹 로그인 없음 → 무료 스톡(Unsplash)으로 진행")
-    except Exception as e:  # noqa: BLE001
-        log(f"웹 이미지 일괄 생성 실패 → 스톡 폴백({str(e)[:40]})")
-    # 🔴중복 금지(2026-08-31 에디님 지시): "실패해도 재사용은 하지 않는다. 재사용 시 업로드 금지."
-    #   폴백 스톡이 같은 검색어에 같은 사진을 돌려줘 한 글에 똑같은 모니터·노트 사진이 반복됐다.
-    #   → 파일 해시로 판정해 이미 쓴 그림이면 **그 자리를 비운다**(같은 그림을 또 넣지 않는다).
     import hashlib as _hl
+    import json as _json
+    _hist_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "work", "used_photos.json")
+    try:
+        _hist = _json.load(open(_hist_path, encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        _hist = []
 
-    def _digest(path: str) -> str:
+    def _hashes(path: str):
         try:
-            with open(path, "rb") as f:
-                return _hl.md5(f.read()).hexdigest()
+            from PIL import Image
+            im = Image.open(path).convert("L")
+            a = list(im.resize((8, 8)).getdata()); avg = sum(a) / 64
+            ah = sum(1 << k for k, v in enumerate(a) if v >= avg)
+            d = list(im.resize((9, 8)).getdata())
+            dh = sum(1 << k for k in range(64) if d[(k // 8) * 9 + k % 8] > d[(k // 8) * 9 + k % 8 + 1])
+            return ah, dh
         except Exception:  # noqa: BLE001
-            return ""
+            return None
 
-    _used_digests: set = set()
+    _used: list = []          # 이 글에서 이미 쓴 (md5, aHash, dHash)
+
+    def _same(h1, h2) -> bool:
+        if h1[0] and h1[0] == h2[0]:
+            return True
+        if h1[1] is None or h2[1] is None:
+            return False
+        return bin(h1[1] ^ h2[1]).count("1") <= 10 and bin(h1[2] ^ h2[2]).count("1") <= 10
 
     def _accept(path: str, label: str) -> bool:
-        d = _digest(path)
-        if not d:
+        try:
+            md5 = _hl.md5(open(path, "rb").read()).hexdigest()
+        except Exception:  # noqa: BLE001
             return False
-        # 🔴마지막 방어선(2026-09-09): 생성이 덜 끝난 '흐린 얼룩'은 어느 경로로 왔든 올리지 않는다.
-        #   md5 중복검사로는 안 걸린다(파일은 매번 다르다) — 실제로 예약 발행분에 그대로 나갔다.
         try:
             import image_finder as _if
-            if _if.is_broken_image(path):
-                log(f"{label} 뭉개진 이미지(생성 미완성) → 버리고 이 자리는 비운다")
-                try:
-                    os.remove(path)
-                except Exception:  # noqa: BLE001
-                    pass
+            if hasattr(_if, "is_broken_image") and _if.is_broken_image(path):
+                log(f"{label} 흐린(덜 그린) 그림 → 다음 순서로")
                 return False
         except Exception:  # noqa: BLE001
             pass
-        if d in _used_digests:
-            log(f"{label} 앞서 쓴 그림과 동일 → 재사용 금지, 이 자리는 비운다")
-            try:
-                os.remove(path)
-            except Exception:  # noqa: BLE001
-                pass
-            return False
-        _used_digests.add(d)
+        ph = _hashes(path)
+        me = (md5, ph[0] if ph else None, ph[1] if ph else None)
+        for old in _used + [tuple(x) for x in _hist]:
+            if _same(me, old):
+                log(f"{label} 앞서 쓴 사진과 같음(반복) → 다음 순서로")
+                return False
+        _used.append(me)
         return True
 
-    for n, i in enumerate(photo_idxs):
-        out_path = out_paths[n]
+    got = [False] * len(photo_idxs)
+    # ① 무료 사진(픽사베이·언스플래시 키)
+    for n in range(len(photo_idxs)):
         q = queries[n] if n < len(queries) else descs[n]
-        # 웹 생성이 안 된 자리만 Unsplash/Gemini API로 채운다.
-        made = bool(web_ok[n]) if n < len(web_ok) else False
-        if made and _accept(out_path, f"본문사진{n+1}"):
-            blocks[i] = {"type": "image", "kind": "body", "path": out_path,
+        if image_finder.search_download(q, out_paths[n]) and _accept(out_paths[n], f"사진{n+1}"):
+            got[n] = True
+    log(f"① 무료 사진 {sum(got)}/{len(got)}장")
+    # ②③ 에고라이트로 그림 만들기(맥)
+    try:
+        import browser_upload as _bu
+        _ego = _bu.mode() == "ego"
+    except Exception:  # noqa: BLE001
+        _ego = False
+    if _ego and not all(got):
+        import ego_images
+        for step, fn in (("② 제미나이", ego_images.gemini), ("③ 챗GPT", ego_images.chatgpt)):
+            miss = [n for n, ok in enumerate(got) if not ok]
+            if not miss:
+                break
+            gen = [os.path.join(workdir, f"body_{n+1:02d}_gen.jpg") for n in miss]
+            res = fn([descs[n] for n in miss], gen, log)
+            for k, n in enumerate(miss):
+                if k < len(res) and res[k] and _accept(gen[k], f"사진{n+1}"):
+                    out_paths[n] = gen[k]
+                    got[n] = True
+            log(f"{step} → {sum(got)}/{len(got)}장")
+    # ④ 못 채운 자리 = 빨간 [사진N] (주인이 직접 넣는다)
+    for n, i in enumerate(photo_idxs):
+        if got[n]:
+            blocks[i] = {"type": "image", "kind": "body", "path": out_paths[n],
                          "missing": False, "label": f"본문사진{n+1}"}
             attached += 1
-        elif image_finder.search_download(q, out_path) and _accept(out_path, f"본문사진{n+1}"):
-            blocks[i] = {"type": "image", "kind": "body", "path": out_path,
-                         "missing": False, "label": f"본문사진{n+1}"}
-            attached += 1
-        elif image_finder.generate_gemini(descs[n], out_path) and _accept(out_path, f"본문사진{n+1}"):
-            # Unsplash에서 못 찾으면 설명대로 Gemini API가 사진을 생성해 대체
-            blocks[i] = {"type": "image", "kind": "body", "path": out_path,
-                         "missing": False, "label": f"본문사진{n+1}"}
-            attached += 1
-            log(f"본문사진{n+1} Unsplash 실패 → Gemini 생성으로 대체")
         else:
-            # Unsplash·Gemini 모두 실패하면 마커 텍스트를 본문에 남기지 않고 제거(빈 줄 대체)
-            blocks[i] = {"type": "blank"}
-            log(f"본문사진{n+1} 이미지 없음(Unsplash·Gemini 실패) → 마커 제거")
-    log(f"본문 이미지 {attached}/{len(descs)}개 자동 첨부 완료")
+            _d = re.sub(r"^\[?\s*사진\s*\d+\s*-?\s*|\]\s*$", "", descs[n]).strip()
+            blocks[i] = {"type": "marker", "text": f"[사진{n+1} - {_d[:60]}]", "desc": _d}
+    try:
+        _hist = (_hist + [list(x) for x in _used])[-300:]
+        os.makedirs(os.path.dirname(_hist_path), exist_ok=True)
+        _json.dump(_hist, open(_hist_path, "w", encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        pass
+    log(f"본문 사진 {attached}/{len(descs)}장 · 빈 자리 {len(descs) - attached}곳은 빨간 [사진N]으로 남김")
     return attached
 
 

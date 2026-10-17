@@ -159,6 +159,7 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
     os.makedirs(ASIDE_DIR, exist_ok=True)
     parts = []
     n_photo = 0
+    missing = []          # 무료 사진을 못 찾은 자리 → 어사이드에게 그림을 만들게 한다
     photo_dir = os.path.join(ASIDE_DIR, f"{post_no}_사진")
     shutil.rmtree(photo_dir, ignore_errors=True)
     for b in blocks:
@@ -172,8 +173,10 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
             parts.append(f"<h2>■ {html.escape(txt)}</h2>")
         elif t == "quote":
             parts.append(f"<blockquote>{html.escape(txt).replace(chr(10), '<br>')}</blockquote>")
-        elif t in ("image", "photo"):
+        elif t in ("image", "photo", "marker"):
             n_photo += 1
+            if t != "image":
+                missing.append((n_photo, b.get("desc") or re.sub(r"^\[사진\d+\s*-?\s*|\]$", "", txt)))
             img = ""
             if b.get("path") and os.path.exists(b["path"]):
                 # 🔴2026-10-18 붙여넣기로는 사진이 안 따라간다(에고라이트 실측) → 사진을 번호 붙여 폴더에 모아 둔다.
@@ -204,6 +207,19 @@ def _aside_page(title: str, blocks: list, post_no: str, log) -> dict:
             f.write(f"\n⑥ (할 수 있으면) 저장하기 전에, 빨간 [사진N] 줄마다 그 줄을 지우고 에디터 위쪽 「사진」 버튼으로\n"
                     f"   내 컴퓨터의 이 폴더에서 같은 번호 사진을 넣어: {os.path.abspath(photo_dir)}\n"
                     f"   (사진1 → [사진1] 자리, 사진2 → [사진2] 자리 …) 파일을 고를 수 없으면 이 단계는 건너뛰고 나에게 말해.\n")
+    if missing:
+        # 🔴2026-10-18 사진 순서: 윈도우는 무료 사진까지만 자동 → 못 찾은 자리는 어사이드가 제미나이(안 되면 챗GPT)에서 만든다
+        with open(os.path.join(ASIDE_DIR, f"{post_no}_어사이드_그림만들기_프롬프트.txt"), "w", encoding="utf-8") as f:
+            f.write("너는 내 블로그 그림 도우미야.\n"
+                    "① 새 탭에서 https://gemini.google.com 을 열어. (로그인 화면이 나오면 멈추고 나에게 로그인하라고 말해)\n"
+                    "② 아래 그림을 한 장씩 만들어 줘. 매번 이렇게 부탁해: "
+                    "「블로그에 넣을 사진 한 장. 실제 사진처럼 밝은 톤, 가로 16:9. 사람 얼굴·로고·글자 없이. 장면: (아래 장면)」\n"
+                    "③ 그림이 나오면 다운로드 버튼으로 내려받아. 파일 이름을 바꿀 수 있으면 「사진번호」로 해 줘.\n"
+                    "④ 제미나이가 안 되면(로그인·한도) https://chatgpt.com 에서 같은 방법으로 해 줘.\n"
+                    "⑤ 다 끝나면 몇 장 만들었는지 알려 줘.\n\n[만들 그림]\n")
+            for no, d in missing:
+                f.write(f"- 사진{no}: {d}\n")
+        log(f"→ 무료 사진을 못 찾은 {len(missing)}곳은 「{post_no}_어사이드_그림만들기_프롬프트.txt」를 어사이드에 붙여넣어 만드세요.")
     log(f"어사이드용 글 페이지를 만들었습니다: {path}")
     log("→ 이 파일을 어사이드 창으로 끌어다 놓고, 「어사이드에_붙여넣을_프롬프트.txt」를 Ask 칸에 붙여넣으세요.")
     if n_photo:
