@@ -11,7 +11,7 @@
 ★피드백 기준은 코덱스 앱에 넣던 것과 **똑같다** — `docs/새벽흐름_프롬프트/코덱스_피드백.md`
   (에디님 피드백 지침 8항목 100점 + 연예 블로그 해석 + 파일 규칙)를 그대로 넘긴다.
   지침을 바꾸려면 **이 프롬프트 파일**을 고친다(코덱스 앱에서 고쳐도 여기엔 반영되지 않는다).
-★모델: `gpt-6-astra`(이 맥 models_cache 설명: 가장 높은 모델) · 추론 강도 `medium`
+★모델: `gpt-6-sol`(2026-10-17 astra → sol · 에디님 블로그와 같게) · 추론 강도 `medium`
   (앱의 «Light»가 low다. 채점·교정이라 한 단계 올렸다).
 ★10편을 **한 번에** 부른다. 코덱스는 실행할 때마다 지침·도구 설명을 읽는 고정 비용이 크다
   («한 단어로 답해»도 1.6만 토큰) → 편마다 따로 부르면 그 비용이 열 번 든다.
@@ -59,10 +59,14 @@ def _find_codex() -> str:
         return found
     # 3) 플랫폼별 앱 번들/설치 위치 후보
     if sys.platform == "darwin":
-        cands = ["/Applications/ChatGPT.app/Contents/Resources/codex"]
+        # 🔴2026-10 챗GPT 앱이 코덱스를 codex-cli/bin/ 아래로 옮겼다 — 새 자리 먼저, 옛 자리는 예비
+        cands = [os.path.expanduser(a + "/ChatGPT.app/Contents/Resources/" + r)
+                 for a in ("/Applications", "~/Applications")
+                 for r in ("codex-cli/bin/codex", "codex")]
     elif os.name == "nt":
         la, ad = os.environ.get("LOCALAPPDATA", ""), os.environ.get("APPDATA", "")
         cands = [
+            os.path.join(la, "Programs", "ChatGPT", "resources", "codex-cli", "bin", "codex.exe"),
             os.path.join(la, "Programs", "ChatGPT", "resources", "codex.exe"),
             os.path.join(la, "Programs", "ChatGPT", "codex.exe"),
             os.path.join(ad, "npm", "codex.cmd"),
@@ -77,7 +81,7 @@ def _find_codex() -> str:
 
 
 CODEX_BIN = _find_codex()
-MODEL = "gpt-6-astra"
+MODEL = "gpt-6-sol"
 EFFORT = "medium"
 PROMPT_FILE = os.path.join(BASE, "docs", "새벽흐름_프롬프트", "코덱스_피드백.md")
 BATCH_TIMEOUT = 1800        # 10편 한 번에
