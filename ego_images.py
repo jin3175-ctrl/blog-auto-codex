@@ -30,8 +30,8 @@ def _run(driver: str, descs: list[str], outs: list[str], log, per_image_sec: int
          name: str) -> list[bool]:
     import shutil
     n = len(descs)
-    b = next((c for c in (shutil.which("ego-browser"), os.path.expanduser("~/.local/bin/ego-browser"))
-              if c and os.path.exists(c)), "")
+    import browser_upload
+    b = browser_upload.ego_bin()
     if not n or not b:
         return [False] * n
     work = os.path.join(HERE, "work")
@@ -43,7 +43,7 @@ def _run(driver: str, descs: list[str], outs: list[str], log, per_image_sec: int
                    "profileId": PROFILE, "spaceName": f"{name} 그림"}, f, ensure_ascii=False)
     src = f"const PAYLOAD_PATH = {json.dumps(tmp)};\n" + open(os.path.join(HERE, "ego", driver), encoding="utf-8").read()
     try:
-        proc = subprocess.run([b, "nodejs"], input=src, text=True, capture_output=True,
+        proc = subprocess.run([b, "nodejs"], input=src, text=True, encoding="utf-8", errors="replace", capture_output=True,
                               timeout=budget_sec + per_image_sec + 120)
         out = (proc.stdout or "") + "\n" + (proc.stderr or "")
     except Exception as e:  # noqa: BLE001

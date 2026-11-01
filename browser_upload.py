@@ -46,7 +46,8 @@ def mode() -> str:
         return "aside"
     if v in ("크롬", "chrome"):
         return "chrome"
-    return "ego" if sys.platform == "darwin" else "aside"
+    # 🔴2026-11-01 에디님: 윈도우도 에고라이트로. 깔려 있으면 에고, 없으면 어사이드.
+    return "ego" if sys.platform == "darwin" or ego_bin() else "aside"
 
 
 def _blog_id() -> str:
@@ -62,8 +63,23 @@ def _blog_id() -> str:
 
 # ── 에고라이트 (맥) ─────────────────────────────────────────────
 
+def _win_user_path() -> str:
+    """윈도우 사용자 PATH(레지스트리) — 온보딩이 등록한 ego-browser 는 이미 열린 창에는 안 보인다. 🔴윈도우 실기 미확인."""
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            return os.path.expandvars(winreg.QueryValueEx(k, "Path")[0])
+    except OSError:
+        return ""
+
+
 def ego_bin() -> str:
-    for c in (shutil.which("ego-browser"), os.path.expanduser("~/.local/bin/ego-browser")):
+    home = os.path.expanduser("~/.local/bin")
+    cands = [shutil.which("ego-browser"), shutil.which("ego-browser", path=_win_user_path() or None) if os.name == "nt" else None]
+    cands += [os.path.join(home, "ego-browser" + ext) for ext in ("", ".exe", ".cmd")]
+    for c in cands:
         if c and os.path.exists(c):
             return c
     return ""
@@ -74,7 +90,8 @@ def _ego_run(src: str, timeout: int) -> str:
     if not b:
         raise RuntimeError("에고라이트가 없습니다 — https://lite.ego.app 에서 설치하고, 앱을 한 번 열어 "
                            "첫 화면(온보딩)을 끝내 주세요.")
-    proc = subprocess.run([b, "nodejs"], input=src, text=True, capture_output=True, timeout=timeout)
+    proc = subprocess.run([b, "nodejs"], input=src, text=True, encoding="utf-8", errors="replace",
+                          capture_output=True, timeout=timeout)   # 🔴한글 윈도우 기본은 cp949 — utf-8로 못박는다
     return (proc.stdout or "") + "\n" + (proc.stderr or "")
 
 
